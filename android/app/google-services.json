@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "282181382577",
+    "project_id": "login-ab254",
+    "storage_bucket": "login-ab254.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:282181382577:android:b96be31f1c4f123e550d90",
+        "android_client_info": {
+          "package_name": "com.googlepractical"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDdQuGFde9tB8TOoqhV0UrLFF84_p9UKyA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
