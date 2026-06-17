@@ -11,7 +11,9 @@ import {
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
 
-const FirebaseAuth = () => {
+import { createCallDoc, onCallReady } from './src/signaling/FirestoreSignaling';
+
+const FirebaseAuth = ({ navigation }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [user, setUser] = useState(null);
@@ -25,7 +27,10 @@ const FirebaseAuth = () => {
       setUser(currentUser);
       if (currentUser) {
         subscribeToAvailableUsers(currentUser.uid);
-        saveUserProfile(currentUser).catch(err => console.log('saveUserProfile error:', err));
+        saveUserProfile(currentUser).catch(err =>
+          console.log('saveUserProfile error:', err),
+        );
+        navigation.navigate('UserListScreen', { userId: currentUser.uid });
       } else {
         if (usersUnsubscribe.current) {
           usersUnsubscribe.current();
@@ -41,7 +46,7 @@ const FirebaseAuth = () => {
         usersUnsubscribe.current();
       }
     };
-  }, []);
+  }, [navigation]);
 
   const saveUserProfile = async currentUser => {
     if (!currentUser?.uid) return;
@@ -98,28 +103,124 @@ const FirebaseAuth = () => {
   const handleRegister = async () => {
     try {
       if (!validateInputs()) return;
-      const userCredential = await auth().createUserWithEmailAndPassword(email.trim(), password);
+      const userCredential = await auth().createUserWithEmailAndPassword(
+        email.trim(),
+        password,
+      );
       await saveUserProfile(userCredential.user);
-      Alert.alert('Registration successful', `Welcome ${userCredential.user.email}`);
+      Alert.alert(
+        'Registration successful',
+        `Welcome ${userCredential.user.email}`,
+      );
     } catch (error) {
       console.log('Firebase registration error:', error);
       const code = error.code || 'unknown';
-      Alert.alert('Registration failed', `${code}: ${error.message || 'Unable to register'}`);
+      Alert.alert(
+        'Registration failed',
+        `${code}: ${error.message || 'Unable to register'}`,
+      );
     }
+  };
+
+  const connectToSignaling = async currentUser => {
+    if (!currentUser?.uid) return false;
+
+    // Step 1: connectivity ping (write/read-back)
+    const pingRef = firestore()
+      .collection('signalingConnections')
+      .doc(currentUser.uid);
+
+    // Step 2: signalling readiness (minimal call doc readable)
+    // This uses the same Firestore signalling collections used for offer/answer.
+    let pingOk = false;
+    let readyOk = false;
+
+    try {
+      await pingRef.set(
+        {
+          uid: currentUser.uid,
+          status: 'connected',
+          updatedAt: firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+
+      const snap = await pingRef.get();
+      const data = snap.data();
+      pingOk = !!data && data.status === 'connected';
+    } catch (e) {
+      console.log('connectToSignaling ping error:', e);
+    }
+
+    try {
+      // Create a temporary call doc, then verify it is readable.
+      // Use deterministic ids so we can cleanly read it back.
+      const callRef = await createCallDoc({
+        callerId: currentUser.uid,
+        calleeId: 'readiness-check',
+      });
+
+      await new Promise((resolve, reject) => {
+        const unsub = onCallReady(callRef, data => {
+          // If we can read *some* data from the doc, Firestore signalling is ready.
+          if (data) {
+            unsub?.();
+            resolve();
+          }
+        });
+
+        // safety: resolve only via callback above; reject on timeout
+        setTimeout(() => {
+          unsub?.();
+          reject(new Error('signalling readiness timeout'));
+        }, 5000);
+      });
+
+      // best-effort cleanup (ignore failures)
+      callRef.delete().catch(() => null);
+
+      readyOk = true;
+    } catch (e) {
+      console.log('connectToSignaling readiness error:', e);
+      readyOk = false;
+    }
+
+    return pingOk && readyOk;
   };
 
   const handleLogin = async () => {
     try {
       if (!validateInputs()) return;
-      const userCredential = await auth().signInWithEmailAndPassword(email.trim(), password);
+      const userCredential = await auth().signInWithEmailAndPassword(
+        email.trim(),
+        password,
+      );
       await saveUserProfile(userCredential.user);
-      Alert.alert('Login successful', `Welcome back ${userCredential.user.email}`);
+
+      const signalingOk = await connectToSignaling(userCredential.user);
+      if (signalingOk) {
+        Alert.alert('Signaling connected', 'Socket connected successfully.');
+      } else {
+        Alert.alert(
+          'Signaling connection failed',
+          'Firebase signalling server is not reachable or signalling is not ready.',
+        );
+      }
+
+      Alert.alert(
+        'Login successful',
+        `Welcome back ${userCredential.user.email}`,
+      );
+      navigation.navigate('UserListScreen', {
+        userId: userCredential.user.uid,
+      });
     } catch (error) {
       console.log('Firebase login error:', error);
       const code = error.code || 'unknown';
       let friendly = error.message || 'Unable to login';
       if (code === 'auth/invalid-credential') {
-        friendly = 'Authentication credential is invalid or expired. Try resetting your password.';
+        friendly =
+          'Authentication credential is invalid or expired. Try resetting your password.';
       } else if (code === 'auth/user-not-found') {
         friendly = 'No user found with this email. Please register first.';
       } else if (code === 'auth/wrong-password') {
@@ -131,15 +232,24 @@ const FirebaseAuth = () => {
 
   const handleSendPasswordReset = async () => {
     if (!email || email.trim().length === 0) {
-      Alert.alert('Reset password', 'Please enter the email to reset password.');
+      Alert.alert(
+        'Reset password',
+        'Please enter the email to reset password.',
+      );
       return;
     }
     try {
       await auth().sendPasswordResetEmail(email.trim());
-      Alert.alert('Reset email sent', 'Check your inbox for password reset instructions.');
+      Alert.alert(
+        'Reset email sent',
+        'Check your inbox for password reset instructions.',
+      );
     } catch (error) {
       console.log('Password reset error:', error);
-      Alert.alert('Reset failed', `${error.code || 'error'}: ${error.message || ''}`);
+      Alert.alert(
+        'Reset failed',
+        `${error.code || 'error'}: ${error.message || ''}`,
+      );
     }
   };
 
@@ -156,7 +266,9 @@ const FirebaseAuth = () => {
   const renderUserItem = ({ item }) => (
     <View style={styles.userItem}>
       <Text style={styles.userEmail}>{item.email}</Text>
-      <Text style={styles.userSubtitle}>{item.displayName || 'No display name'}</Text>
+      <Text style={styles.userSubtitle}>
+        {item.displayName || 'No display name'}
+      </Text>
     </View>
   );
 
@@ -179,7 +291,9 @@ const FirebaseAuth = () => {
             contentContainerStyle={styles.userList}
           />
         ) : (
-          <Text style={styles.loadingText}>No other available users found.</Text>
+          <Text style={styles.loadingText}>
+            No other available users found.
+          </Text>
         )}
         <TouchableOpacity style={styles.actionButton} onPress={handleSignOut}>
           <Text style={styles.actionText}>Sign Out</Text>
@@ -213,15 +327,26 @@ const FirebaseAuth = () => {
         <TouchableOpacity style={styles.actionButton} onPress={handleLogin}>
           <Text style={styles.actionText}>Login</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.secondaryButton} onPress={handleRegister}>
+        <TouchableOpacity
+          style={styles.secondaryButton}
+          onPress={handleRegister}
+        >
           <Text style={styles.secondaryText}>Register</Text>
         </TouchableOpacity>
       </View>
-      <TouchableOpacity style={[styles.modeButton, { marginTop: 6 }]} onPress={handleSendPasswordReset}>
+      <TouchableOpacity
+        style={[styles.modeButton, { marginTop: 6 }]}
+        onPress={handleSendPasswordReset}
+      >
         <Text style={styles.modeText}>Forgot password? Send reset email</Text>
       </TouchableOpacity>
-      <TouchableOpacity style={styles.modeButton} onPress={() => setMode(mode === 'login' ? 'register' : 'login')}>
-        <Text style={styles.modeText}>{mode === 'login' ? 'Switch to register' : 'Switch to login'}</Text>
+      <TouchableOpacity
+        style={styles.modeButton}
+        onPress={() => setMode(mode === 'login' ? 'register' : 'login')}
+      >
+        <Text style={styles.modeText}>
+          {mode === 'login' ? 'Switch to register' : 'Switch to login'}
+        </Text>
       </TouchableOpacity>
     </View>
   );

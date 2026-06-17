@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, Button, Alert } from 'react-native';
 import { mediaDevices, RTCPeerConnection } from 'react-native-webrtc';
 import firestore from '@react-native-firebase/firestore';
-import Signaling from './signaling/FirestoreSignaling';
+import auth from '@react-native-firebase/auth';
+import Signaling from './src/signaling/FirestoreSignaling';
 
 // NOTE: This is an example. Install react-native-webrtc and follow its setup.
 // npm install react-native-webrtc
@@ -11,7 +12,11 @@ const configuration = {
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
 };
 
-export default function CallScreen({ localUserId, remoteUserId }) {
+export default function CallScreen({ localUserId, remoteUserId, route }) {
+  const resolvedLocalUserId =
+    localUserId || route?.params?.localUserId || auth().currentUser?.uid;
+  const resolvedRemoteUserId = remoteUserId || route?.params?.remoteUserId;
+
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
   const callRef = useRef(null);
@@ -55,8 +60,13 @@ export default function CallScreen({ localUserId, remoteUserId }) {
   };
 
   const initiateCall = async () => {
+    if (!resolvedLocalUserId || !resolvedRemoteUserId) {
+      Alert.alert('Missing user ids', 'localUserId/remoteUserId are not set.');
+      return;
+    }
     try {
       const localStream = await startLocalStream();
+
       const pc = createPeerConnection();
       pcRef.current = pc;
       // add local tracks
@@ -64,9 +74,10 @@ export default function CallScreen({ localUserId, remoteUserId }) {
 
       // create call doc
       const ref = await Signaling.createCallDoc({
-        callerId: localUserId,
-        calleeId: remoteUserId,
+        callerId: resolvedLocalUserId,
+        calleeId: resolvedRemoteUserId,
       });
+
       callRef.current = ref;
 
       // create offer
@@ -75,7 +86,7 @@ export default function CallScreen({ localUserId, remoteUserId }) {
       await Signaling.setOffer(ref, {
         type: offer.type,
         sdp: offer.sdp,
-        callerId: localUserId,
+        callerId: resolvedLocalUserId,
       });
 
       // listen for answer
@@ -108,8 +119,13 @@ export default function CallScreen({ localUserId, remoteUserId }) {
   };
 
   const answerToCall = async callId => {
+    if (!resolvedLocalUserId || !resolvedRemoteUserId) {
+      Alert.alert('Missing user ids', 'localUserId/remoteUserId are not set.');
+      return;
+    }
     try {
       const ref = firestore().collection('calls').doc(callId);
+
       const snap = await ref.get();
       const data = snap.data();
       if (!data || !data.offer) throw new Error('No offer found');
@@ -129,7 +145,7 @@ export default function CallScreen({ localUserId, remoteUserId }) {
       await Signaling.setAnswer(ref, {
         type: answer.type,
         sdp: answer.sdp,
-        calleeId: localUserId,
+        calleeId: resolvedLocalUserId,
       });
 
       // listen for caller ICE

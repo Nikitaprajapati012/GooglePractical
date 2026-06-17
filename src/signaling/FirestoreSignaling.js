@@ -81,6 +81,30 @@ export function onCallReady(callRef, cb) {
     cb(data || {});
   });
 }
+export async function saveUser(user) {
+  return firestore()
+    .collection('users')
+    .doc(user.uid)
+    .set({
+      uid: user.uid,
+      name: user.displayName || '',
+      email: user.email,
+      online: true,
+      lastSeen: Date.now(),
+      createdAt: Date.now(),
+    });
+}
+
+export function updateOnlineStatus(uid, status) {
+  return firestore().collection('users').doc(uid).update({
+    online: status,
+    lastSeen: Date.now(),
+  });
+}
+
+export function getUsers(callback) {
+  return firestore().collection('users').onSnapshot(callback);
+}
 
 export default {
   createCallDoc,
@@ -91,4 +115,7 @@ export default {
   listenRemoteIce,
   hangup,
   onCallReady,
+  saveUser,
+  updateOnlineStatus,
+  getUsers,
 };
