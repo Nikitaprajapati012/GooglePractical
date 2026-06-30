@@ -6,8 +6,6 @@ import UserListScreen from '../screens/UserListScreen';
 import FirebaseAuth from '../../FirebaseAuth';
 
 import SplashScreen from '../screens/SplashScreen';
-import HomeScreen from '../screens/HomeScreen';
-import LoginScreen from '../screens/LoginScreen';
 import IncomingCallScreen from '../screens/IncomingCallScreen';
 import OutgoingCallScreen from '../screens/OutgoingCallScreen';
 import ActiveCallScreen from '../screens/ActiveCallScreen';
@@ -23,9 +21,7 @@ export default function AppNavigator() {
 
       {/* Backward-compatible: current entry uses FirebaseAuth route. */}
       <Stack.Screen name="FirebaseAuth" component={FirebaseAuth} />
-      <Stack.Screen name="LoginScreen" component={LoginScreen} />
 
-      <Stack.Screen name="HomeScreen" component={HomeScreen} />
       <Stack.Screen name="UserListScreen" component={UserListScreen} />
 
       {/* Incoming/outgoing UI scaffolding (Phase 1). */}
