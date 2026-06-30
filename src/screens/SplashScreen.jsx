@@ -1,23 +1,26 @@
-/* eslint-disable react-native/no-inline-styles */
 import React, { useEffect } from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { View, Image, StyleSheet } from 'react-native';
 
 export default function SplashScreen({ navigation }) {
   useEffect(() => {
-    setTimeout(() => {
+    const t = setTimeout(() => {
       navigation.replace('FirebaseAuth');
-    }, 2000);
-  }, []);
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [navigation]);
 
   return (
-    <View
-      style={{
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-      }}
-    >
-      <ActivityIndicator size="large" />
+    <View style={styles.container}>
+      <Image
+        source={require('../assests/splash.png')}
+        style={styles.logo}
+        resizeMode="contain"
+      />
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  logo: { width: 160, height: 160 },
+});

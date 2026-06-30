@@ -1,7 +1,7 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
-apply plugin: "com.google.gms.google-services"
+
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
@@ -84,6 +84,9 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+        ndk {
+            abiFilters "arm64-v8a"
+        }
     }
     signingConfigs {
         debug {
@@ -110,8 +113,10 @@ android {
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
-    implementation(platform("com.google.firebase:firebase-bom:34.14.1"))
+    implementation(platform("com.google.firebase:firebase-bom:34.15.0"))
     implementation("com.google.firebase:firebase-analytics")
+
+    implementation("org.linphone:linphone-sdk-android:5.3+")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
@@ -119,3 +124,26 @@ dependencies {
         implementation jscFlavor
     }
 }
+
+// Fix duplicate classes caused by legacy com.android.support:* artifacts
+// configurations.all {
+//     resolutionStrategy {
+//         force("com.android.support:support-compat:26.1.0")
+//     }
+// }
+
+// configurations.all {
+//     exclude group: 'com.android.support', module: 'support-v4'
+//     exclude group: 'com.android.support', module: 'support-fragment'
+//     exclude group: 'com.android.support', module: 'support-annotations'
+//     exclude group: 'com.android.support', module: 'support-core-utils'
+//     exclude group: 'com.android.support', module: 'support-core-ui'
+//     exclude group: 'com.android.support', module: 'support-vector-drawable'
+//     exclude group: 'com.android.support', module: 'support-media-compat'
+//     exclude group: 'com.android.support', module: 'support-compat'
+// }
+
+// apply plugin: "com.google.gms.google-services"
+
+apply plugin: "com.google.gms.google-services"
+

@@ -1,21 +1,24 @@
 import { useEffect } from 'react';
 import { AppState } from 'react-native';
-import auth from '@react-native-firebase/auth';
-import FirestoreService from '../services/FirestoreService';
+
+import firestoreService from '../services/FirestoreService';
 
 export default function usePresence() {
   useEffect(() => {
     const subscription = AppState.addEventListener('change', async state => {
-      const user = auth().currentUser;
+      const user = firestoreService.getCurrentUser();
 
-      if (!user) {
-        return;
-      }
+      if (!user?.uid) return;
 
-      if (state === 'active') {
-        await FirestoreService.updateOnlineStatus(user.uid, true);
-      } else {
-        await FirestoreService.updateOnlineStatus(user.uid, false);
+      // Keep the existing app’s Firestore field: users/{uid}.online
+      try {
+        if (state === 'active') {
+          await firestoreService.updateOnlineStatus(user.uid, true);
+        } else {
+          await firestoreService.updateOnlineStatus(user.uid, false);
+        }
+      } catch {
+        // best-effort presence update
       }
     });
 

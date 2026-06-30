@@ -1,16 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import { View, FlatList, ActivityIndicator, StyleSheet } from 'react-native';
-import Signaling from '../signaling/FirestoreSignaling';
-import UserCard from '../components/UserCard';
 
-const UserListScreen = ({ navigation, route }) => {
+import firestoreService from '../services/FirestoreService';
+import UserCard from '../components/UserCard';
+import Toolbar from '../components/Toolbar';
+
+const UserListScreen = ({ navigation }) => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const currentUserId = route?.params?.userId;
+  const currentUserId = firestoreService.getCurrentUser()?.uid;
 
   useEffect(() => {
-    const unsubscribe = Signaling.getUsers(snapshot => {
+    const unsubscribe = firestoreService.getUsers(snapshot => {
       const list = (snapshot?.docs || [])
         .map(doc => ({ id: doc.id, ...doc.data() }))
         .filter(u => u?.uid && u.uid !== currentUserId);
@@ -22,10 +24,20 @@ const UserListScreen = ({ navigation, route }) => {
     return () => unsubscribe?.();
   }, [currentUserId]);
 
+  const handleSignOut = async () => {
+    try {
+      await firestoreService.signOut();
+      navigation.replace('FirebaseAuth');
+    } catch (e) {
+      console.log('[UserListScreen] signOut error', e);
+    }
+  };
+
   return (
     <View style={styles.container}>
+      <Toolbar onSignOutPress={handleSignOut} />
       {loading ? (
-        <ActivityIndicator />
+        <ActivityIndicator style={{ marginTop: 24 }} />
       ) : (
         <FlatList
           data={users}
@@ -38,7 +50,7 @@ const UserListScreen = ({ navigation, route }) => {
                 uid: item.uid,
               }}
               onPress={() => {
-                navigation.navigate('CallScreen', {
+                navigation.navigate('OutgoingCallScreen', {
                   remoteUserId: item.uid,
                 });
               }}
@@ -51,7 +63,10 @@ const UserListScreen = ({ navigation, route }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
+  container: {
+    flex: 1,
+    backgroundColor: '#070b14',
+  },
 });
 
 export default UserListScreen;

@@ -1,0 +1,38 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow create, update: if signedIn() && request.auth.uid == userId;
+    }
+
+    match /calls/{callId} {
+      allow create: if signedIn()
+        && request.resource.data.callerId == request.auth.uid;
+
+      allow read, update, delete: if signedIn() && (
+        resource.data.callerId == request.auth.uid ||
+        resource.data.calleeId == request.auth.uid
+      );
+    }
+
+    match /calls/{callId}/callerCandidates/{candidateId} {
+      allow read, create, delete: if signedIn() && (
+        get(/databases/$(database)/documents/calls/$(callId)).data.callerId == request.auth.uid ||
+        get(/databases/$(database)/documents/calls/$(callId)).data.calleeId == request.auth.uid
+      );
+    }
+
+    match /calls/{callId}/calleeCandidates/{candidateId} {
+      allow read, create, delete: if signedIn() && (
+        get(/databases/$(database)/documents/calls/$(callId)).data.callerId == request.auth.uid ||
+        get(/databases/$(database)/documents/calls/$(callId)).data.calleeId == request.auth.uid
+      );
+    }
+  }
+}

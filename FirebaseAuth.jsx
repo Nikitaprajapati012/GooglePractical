@@ -1,3 +1,4 @@
+/* eslint-disable react-native/no-inline-styles */
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
@@ -8,10 +9,7 @@ import {
   StyleSheet,
   FlatList,
 } from 'react-native';
-import auth from '@react-native-firebase/auth';
-import firestore from '@react-native-firebase/firestore';
-
-import { createCallDoc, onCallReady } from './src/signaling/FirestoreSignaling';
+import firestoreService from './src/services/FirestoreService';
 
 const FirebaseAuth = ({ navigation }) => {
   const [email, setEmail] = useState('');
@@ -22,21 +20,26 @@ const FirebaseAuth = ({ navigation }) => {
   const [loadingUsers, setLoadingUsers] = useState(false);
   const usersUnsubscribe = useRef(null);
 
+  const hasShownConnectionAlertRef = useRef(false);
+
   useEffect(() => {
-    const unsubscribe = auth().onAuthStateChanged(currentUser => {
+    const unsubscribe = firestoreService.onAuthStateChanged(currentUser => {
       setUser(currentUser);
       if (currentUser) {
         subscribeToAvailableUsers(currentUser.uid);
         saveUserProfile(currentUser).catch(err =>
           console.log('saveUserProfile error:', err),
         );
-        navigation.navigate('UserListScreen', { userId: currentUser.uid });
+        navigation.replace('UserListScreen', { userId: currentUser.uid });
       } else {
         if (usersUnsubscribe.current) {
           usersUnsubscribe.current();
           usersUnsubscribe.current = null;
         }
         setAvailableUsers([]);
+
+        // reset so next login can show the alert again
+        hasShownConnectionAlertRef.current = false;
       }
     });
 
@@ -48,20 +51,16 @@ const FirebaseAuth = ({ navigation }) => {
     };
   }, [navigation]);
 
+
+
   const saveUserProfile = async currentUser => {
     if (!currentUser?.uid) return;
-    await firestore()
-      .collection('users')
-      .doc(currentUser.uid)
-      .set(
-        {
-          uid: currentUser.uid,
-          email: currentUser.email || '',
-          displayName: currentUser.displayName || '',
-          lastSeen: firestore.FieldValue.serverTimestamp(),
-        },
-        { merge: true },
-      );
+    await firestoreService.saveUserProfile(currentUser);
+  };
+
+  const markSipLoggedIn = async user => {
+    if (!user?.uid) return;
+    await firestoreService.markSipLoggedIn(user);
   };
 
   const subscribeToAvailableUsers = uid => {
@@ -70,22 +69,21 @@ const FirebaseAuth = ({ navigation }) => {
       usersUnsubscribe.current();
     }
 
-    usersUnsubscribe.current = firestore()
-      .collection('users')
-      .orderBy('email')
-      .onSnapshot(
-        snapshot => {
-          const users = snapshot.docs
-            .map(doc => ({ id: doc.id, ...doc.data() }))
-            .filter(userItem => userItem.uid !== uid);
-          setAvailableUsers(users);
-          setLoadingUsers(false);
-        },
-        error => {
-          console.log('Available users snapshot error:', error);
-          setLoadingUsers(false);
-        },
-      );
+    usersUnsubscribe.current = firestoreService.getUsers(
+      snapshot => {
+        const users = (snapshot?.docs || [])
+          .map(doc => ({ id: doc.id, ...doc.data() }))
+          .filter(userItem => userItem.uid !== uid);
+        // Sort users by email in memory
+        users.sort((a, b) => (a.email || '').localeCompare(b.email || ''));
+        setAvailableUsers(users);
+        setLoadingUsers(false);
+      },
+      error => {
+        console.log('Available users snapshot error:', error);
+        setLoadingUsers(false);
+      },
+    );
   };
 
   const validateInputs = () => {
@@ -103,11 +101,12 @@ const FirebaseAuth = ({ navigation }) => {
   const handleRegister = async () => {
     try {
       if (!validateInputs()) return;
-      const userCredential = await auth().createUserWithEmailAndPassword(
+      const userCredential = await firestoreService.register(
         email.trim(),
         password,
       );
       await saveUserProfile(userCredential.user);
+      await markSipLoggedIn(userCredential.user);
       Alert.alert(
         'Registration successful',
         `Welcome ${userCredential.user.email}`,
@@ -122,96 +121,45 @@ const FirebaseAuth = ({ navigation }) => {
     }
   };
 
-  const connectToSignaling = async currentUser => {
-    if (!currentUser?.uid) return false;
-
-    // Step 1: connectivity ping (write/read-back)
-    const pingRef = firestore()
-      .collection('signalingConnections')
-      .doc(currentUser.uid);
-
-    // Step 2: signalling readiness (minimal call doc readable)
-    // This uses the same Firestore signalling collections used for offer/answer.
-    let pingOk = false;
-    let readyOk = false;
-
-    try {
-      await pingRef.set(
-        {
-          uid: currentUser.uid,
-          status: 'connected',
-          updatedAt: firestore.FieldValue.serverTimestamp(),
-        },
-        { merge: true },
-      );
-
-      const snap = await pingRef.get();
-      const data = snap.data();
-      pingOk = !!data && data.status === 'connected';
-    } catch (e) {
-      console.log('connectToSignaling ping error:', e);
-    }
-
-    try {
-      // Create a temporary call doc, then verify it is readable.
-      // Use deterministic ids so we can cleanly read it back.
-      const callRef = await createCallDoc({
-        callerId: currentUser.uid,
-        calleeId: 'readiness-check',
-      });
-
-      await new Promise((resolve, reject) => {
-        const unsub = onCallReady(callRef, data => {
-          // If we can read *some* data from the doc, Firestore signalling is ready.
-          if (data) {
-            unsub?.();
-            resolve();
-          }
-        });
-
-        // safety: resolve only via callback above; reject on timeout
-        setTimeout(() => {
-          unsub?.();
-          reject(new Error('signalling readiness timeout'));
-        }, 5000);
-      });
-
-      // best-effort cleanup (ignore failures)
-      callRef.delete().catch(() => null);
-
-      readyOk = true;
-    } catch (e) {
-      console.log('connectToSignaling readiness error:', e);
-      readyOk = false;
-    }
-
-    return pingOk && readyOk;
-  };
-
   const handleLogin = async () => {
     try {
       if (!validateInputs()) return;
-      const userCredential = await auth().signInWithEmailAndPassword(
+      const userCredential = await firestoreService.login(
         email.trim(),
         password,
       );
       await saveUserProfile(userCredential.user);
 
-      const signalingOk = await connectToSignaling(userCredential.user);
-      if (signalingOk) {
-        Alert.alert('Signaling connected', 'Socket connected successfully.');
-      } else {
-        Alert.alert(
-          'Signaling connection failed',
-          'Firebase signalling server is not reachable or signalling is not ready.',
-        );
-      }
+      // "SIP login at firebase auth time" (presence marker):
+      await markSipLoggedIn(userCredential.user);
 
-      Alert.alert(
-        'Login successful',
-        `Welcome back ${userCredential.user.email}`,
-      );
-      navigation.navigate('UserListScreen', {
+      // SIP registration using Linphone SDK commented out as requested
+      /*
+      try {
+        const { sipRegister } = require('./src/services/sip/linphone');
+        const domain = 'sip.linphone.org';
+
+        try {
+          await LinphoneRNModule?.setLogLevel?.({ level: 'debug' });
+        } catch {
+          // ignore
+        }
+
+        await sipRegister({
+          domain,
+          credentials: [
+            {
+              username: 'burhanyopmail',
+              password: '123456',
+            },
+          ],
+        });
+      } catch (e) {
+        console.log('sipRegister error:', e);
+      }
+      */
+
+      navigation.replace('UserListScreen', {
         userId: userCredential.user.uid,
       });
     } catch (error) {
@@ -239,7 +187,7 @@ const FirebaseAuth = ({ navigation }) => {
       return;
     }
     try {
-      await auth().sendPasswordResetEmail(email.trim());
+      await firestoreService.sendPasswordReset(email.trim());
       Alert.alert(
         'Reset email sent',
         'Check your inbox for password reset instructions.',
@@ -255,7 +203,17 @@ const FirebaseAuth = ({ navigation }) => {
 
   const handleSignOut = async () => {
     try {
-      await auth().signOut();
+      // Best-effort SIP unregister commented out as requested
+      /*
+      try {
+        const { sipUnregister } = require('./src/services/sip/linphone');
+        await sipUnregister();
+      } catch (e) {
+        console.log('sipUnregister error:', e);
+      }
+      */
+
+      await firestoreService.signOut();
       Alert.alert('Sign out successful');
     } catch (error) {
       console.log('Firebase sign out error:', error);
@@ -305,12 +263,13 @@ const FirebaseAuth = ({ navigation }) => {
   return (
     <View style={styles.card}>
       <Text style={styles.title}>Firebase Email Auth</Text>
+
       <TextInput
         style={styles.input}
         placeholder="Email"
         keyboardType="email-address"
         autoCapitalize="none"
-        autoComplete="email"
+        // autoComplete="email"
         value={email}
         onChangeText={setEmail}
       />
@@ -318,8 +277,7 @@ const FirebaseAuth = ({ navigation }) => {
         style={styles.input}
         placeholder="Password"
         secureTextEntry
-        autoCapitalize="none"
-        autoComplete="password"
+        // autoComplete="password"
         value={password}
         onChangeText={setPassword}
       />
@@ -355,102 +313,114 @@ const FirebaseAuth = ({ navigation }) => {
 const styles = StyleSheet.create({
   card: {
     width: '100%',
-    marginBottom: 24,
-    padding: 18,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 3,
+    height: '100%',
+    padding: 24,
+    justifyContent: 'center',
+    backgroundColor: '#070b14',
   },
   title: {
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 12,
+    color: '#e2e8f0',
+    fontSize: 22,
+    fontWeight: '800',
+    marginBottom: 20,
+    textAlign: 'center',
   },
   input: {
     borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 12,
-    backgroundColor: '#fafafa',
+    borderColor: 'rgba(148,163,184,0.25)',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    color: '#e2e8f0',
+    backgroundColor: '#0b1220',
   },
   buttonGroup: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginTop: 10,
   },
   actionButton: {
     flex: 1,
-    backgroundColor: '#2e78b7',
-    borderRadius: 10,
-    paddingVertical: 12,
+    backgroundColor: '#3b82f6',
+    borderRadius: 12,
+    paddingVertical: 14,
     alignItems: 'center',
+    justifyContent: 'center',
     marginRight: 8,
   },
   actionText: {
     color: '#fff',
-    fontWeight: '700',
+    fontWeight: '800',
+    fontSize: 15,
   },
   secondaryButton: {
     flex: 1,
-    backgroundColor: '#f0f0f0',
-    borderRadius: 10,
-    paddingVertical: 12,
+    backgroundColor: '#0b1220',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.25)',
+    paddingVertical: 14,
     alignItems: 'center',
+    justifyContent: 'center',
     marginLeft: 8,
   },
   secondaryText: {
-    color: '#333',
-    fontWeight: '700',
+    color: '#e2e8f0',
+    fontWeight: '800',
+    fontSize: 15,
   },
   modeButton: {
-    marginTop: 14,
+    marginTop: 20,
     paddingVertical: 10,
     alignItems: 'center',
   },
   modeText: {
-    color: '#2e78b7',
-    fontWeight: '600',
+    color: '#60a5fa',
+    fontWeight: '700',
+    fontSize: 14,
   },
   label: {
     fontSize: 14,
-    color: '#444',
-    marginTop: 6,
+    color: 'rgba(226,232,240,0.6)',
+    marginTop: 10,
+  },
+  value: {
+    fontSize: 16,
+    color: '#e2e8f0',
+    fontWeight: '700',
+    marginBottom: 8,
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginTop: 18,
-    marginBottom: 10,
+    fontSize: 18,
+    color: '#e2e8f0',
+    fontWeight: '800',
+    marginTop: 24,
+    marginBottom: 12,
   },
   loadingText: {
-    color: '#666',
+    color: 'rgba(226,232,240,0.5)',
     marginBottom: 12,
   },
   userList: {
     paddingBottom: 10,
   },
   userItem: {
-    padding: 12,
-    borderRadius: 10,
-    backgroundColor: '#f5f8ff',
-    marginBottom: 10,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: '#0b1220',
+    borderWidth: 1,
+    borderColor: 'rgba(148,163,184,0.15)',
+    marginBottom: 12,
   },
   userEmail: {
     fontSize: 15,
-    fontWeight: '600',
+    color: '#e2e8f0',
+    fontWeight: '700',
   },
   userSubtitle: {
-    fontSize: 13,
-    color: '#666',
+    fontSize: 12,
+    color: 'rgba(226,232,240,0.6)',
     marginTop: 4,
-  },
-  value: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 6,
   },
 });
 
