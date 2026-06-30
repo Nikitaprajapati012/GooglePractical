@@ -298,19 +298,17 @@ class FirestoreService {
     return snap.data() || null;
   }
 
+  listenCall(callId, callback) {
+    const db = getFirestore();
+    const callRef = doc(db, 'calls', callId);
+    return onSnapshot(callRef, callback);
+  }
+
   async getCall(callId) {
     const db = getFirestore();
     const callRef = doc(db, 'calls', callId);
     const snap = await getDoc(callRef);
     return snap.data() || null;
-  }
-
-  listenCall(callId, callback) {
-    const db = getFirestore();
-    const callRef = doc(db, 'calls', callId);
-    return onSnapshot(callRef, snapshot => {
-      if (snapshot) callback(snapshot);
-    });
   }
 
   listenUser(uid, callback) {
