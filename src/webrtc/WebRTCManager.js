@@ -264,6 +264,8 @@ export default class WebRTCManager {
 
     try {
       await this._startLocalStream();
+      if (this._localRole !== 'caller') return { callId: null }; // aborted
+
       this._createPeerConnection({ onRemoteStream, onState });
       this._attachLocalTracks(this.localStream);
 
@@ -271,21 +273,26 @@ export default class WebRTCManager {
         callerId: localUserId,
         calleeId: remoteUserId,
       });
+      if (!this.pc) return { callId: null }; // aborted
+
       this.callId = callId;
 
       const offer = await this.pc.createOffer();
       await this.pc.setLocalDescription(offer);
+      if (!this.pc || !this.callId) return { callId: null }; // aborted
 
       await firestoreService.setOffer(callId, {
         type: offer.type,
         sdp: offer.sdp,
         callerId: localUserId,
       });
+      if (!this.pc || !this.callId) return { callId: null }; // aborted
 
       // Answer listener
       const unsubAns = firestoreService.onAnswer(callId, async answer => {
         if (!answer?.sdp) return;
         try {
+          if (!this.pc) return;
           await this.pc.setRemoteDescription({
             type: answer.type,
             sdp: answer.sdp,
@@ -329,6 +336,8 @@ export default class WebRTCManager {
 
     try {
       await this._startLocalStream();
+      if (this._localRole !== 'callee') return { callId: null }; // aborted
+
       this._createPeerConnection({ onRemoteStream, onState });
       this._attachLocalTracks(this.localStream);
 
@@ -339,6 +348,7 @@ export default class WebRTCManager {
       } else {
         // Find latest call where calleeId == localUserId
         const latestDoc = await firestoreService.getLatestCallForCallee(localUserId);
+        if (!this.pc) return { callId: null }; // aborted
         if (!latestDoc) throw new Error('No call doc found for this calleeId');
         resolvedCallId = latestDoc.id;
       }
@@ -346,12 +356,15 @@ export default class WebRTCManager {
       this.callId = resolvedCallId;
 
       const data = await firestoreService.getCall(resolvedCallId);
+      if (!this.pc || !this.callId) return { callId: null }; // aborted
       if (!data?.offer) throw new Error('No offer found');
 
       await this.pc.setRemoteDescription({
         type: data.offer.type,
         sdp: data.offer.sdp,
       });
+      if (!this.pc || !this.callId) return { callId: null }; // aborted
+
       this.remoteDescriptionSet = true;
       await this._flushPendingIce();
 
@@ -360,12 +373,14 @@ export default class WebRTCManager {
 
       const answer = await this.pc.createAnswer();
       await this.pc.setLocalDescription(answer);
+      if (!this.pc || !this.callId) return { callId: null }; // aborted
 
       await firestoreService.setAnswer(resolvedCallId, {
         type: answer.type,
         sdp: answer.sdp,
         calleeId: localUserId,
       });
+      if (!this.pc || !this.callId) return { callId: null }; // aborted
 
       onAnswered?.({ answer });
 

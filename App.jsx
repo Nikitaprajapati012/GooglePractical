@@ -38,32 +38,45 @@ const App = () => {
         );
         callUnsub = firestoreService.listenIncomingCalls(user.uid, snap => {
           if (!snap) return;
-              
-              // Filter on client-side: accept calls created within the last 2 minutes (immune to clock drift)
-              const activeCall = snap.docs.find(doc => {
-                const data = doc.data();
-                const createdAt = data.createdAt;
-                if (!createdAt) return false;
-                const createdTime = createdAt?.toDate 
-                  ? createdAt.toDate().getTime() 
-                  : new Date(createdAt).getTime();
-                const ageMs = Math.abs(Date.now() - createdTime);
-                return ageMs < 120000; // 2 minutes
-              });
 
-              if (activeCall) {
-                const data = activeCall.data();
+          // Filter on client-side: accept calls created within the last 2 minutes (immune to clock drift)
+          const activeCall = snap.docs.find(doc => {
+            const data = doc.data();
+            const createdAt = data.createdAt;
+            if (!createdAt) return false;
+            const createdTime = createdAt?.toDate
+              ? createdAt.toDate().getTime()
+              : new Date(createdAt).getTime();
+            const ageMs = Math.abs(Date.now() - createdTime);
+            return ageMs < 120000; // 2 minutes
+          });
+
+          if (activeCall) {
+            const data = activeCall.data();
+            console.log(
+              '[App] Firestore incoming call detected:',
+              activeCall.id,
+            );
+            if (navigationRef.current) {
+              const currentRoute = navigationRef.current.getCurrentRoute()?.name;
+              if (
+                currentRoute === 'OutgoingCallScreen' ||
+                currentRoute === 'IncomingCallScreen' ||
+                currentRoute === 'ActiveCallScreen'
+              ) {
                 console.log(
-                  '[App] Firestore incoming call detected:',
-                  activeCall.id,
+                  '[App] Ignoring incoming call because user is already in a calling screen:',
+                  currentRoute,
                 );
-                if (navigationRef.current) {
-                  navigationRef.current.navigate('IncomingCallScreen', {
-                    callId: activeCall.id,
-                    remoteUserId: data.callerId,
-                  });
-                }
+                return;
               }
+
+              navigationRef.current.navigate('IncomingCallScreen', {
+                callId: activeCall.id,
+                remoteUserId: data.callerId,
+              });
+            }
+          }
         });
       }
     });
