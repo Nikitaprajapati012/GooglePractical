@@ -41,6 +41,11 @@ export function consumePendingIncomingCall() {
 }
 
 export async function registerUserFCMToken() {
+  if (typeof messaging !== 'function') {
+    console.log('[FCM] registerUserFCMToken skipped: messaging module is unavailable');
+    return null;
+  }
+
   const currentUser = firestoreService.getCurrentUser();
   const uid = currentUser?.uid;
 
@@ -65,27 +70,25 @@ export async function registerUserFCMToken() {
     console.log('[FCM] requestPermission error', e?.message || String(e));
   }
 
-  const fcmToken = await messaging().getToken();
-  if (!fcmToken) return null;
-
   try {
-    await firestoreService.saveUserFcmToken(uid, fcmToken);
-  } catch (err) {
-    console.log(
-      '[FCM] registerUserFCMToken write FAILED',
-      JSON.stringify({
-        uid,
-        message: err?.message || String(err),
-      }),
-    );
-    throw err;
-  }
+    const fcmToken = await messaging().getToken();
+    if (!fcmToken) return null;
 
-  console.log('[FCM] registered token for uid', uid);
-  return fcmToken;
+    await firestoreService.saveUserFcmToken(uid, fcmToken);
+    console.log('[FCM] registered token for uid', uid);
+    return fcmToken;
+  } catch (e) {
+    console.log('[FCM] getToken or saveUserFcmToken error:', e?.message || String(e));
+    return null;
+  }
 }
 
 export async function setupFCMHandlers({ onIncomingCall } = {}) {
+  if (typeof messaging !== 'function') {
+    console.log('[FCM] setupFCMHandlers skipped: messaging module is unavailable');
+    return () => {};
+  }
+
   // Foreground messages
   const unsubOnMessage = messaging().onMessage(async remoteMessage => {
     const normalized = normalizePayload(remoteMessage);
@@ -106,21 +109,25 @@ export async function setupFCMHandlers({ onIncomingCall } = {}) {
 
   // Background/quit messages: only reliable for notification payloads + headless handler.
   // react-native-firebase requires setBackgroundMessageHandler at top-level scope.
-  messaging().setBackgroundMessageHandler(async remoteMessage => {
-    const normalized = normalizePayload(remoteMessage);
-    if (!normalized) return;
+  try {
+    messaging().setBackgroundMessageHandler(async remoteMessage => {
+      const normalized = normalizePayload(remoteMessage);
+      if (!normalized) return;
 
-    console.log('[FCM] background INCOMING_CALL', normalized);
+      console.log('[FCM] background INCOMING_CALL', normalized);
 
-    try {
-      await storePendingIncomingCall(normalized);
-    } catch {
-      // ignore
-    }
+      try {
+        await storePendingIncomingCall(normalized);
+      } catch {
+        // ignore
+      }
 
-    // Background handler cannot navigate; we rely on consumePendingIncomingCall
-    // when app is opened.
-  });
+      // Background handler cannot navigate; we rely on consumePendingIncomingCall
+      // when app is opened.
+    });
+  } catch (err) {
+    console.log('[FCM] setBackgroundMessageHandler error', err);
+  }
 
   // App opened from notification (quit -> open)
   const unsubscribeOpenedApp = messaging().onNotificationOpenedApp(

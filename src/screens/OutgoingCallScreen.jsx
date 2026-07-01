@@ -6,7 +6,6 @@ import {
   ActivityIndicator,
   TouchableOpacity,
 } from 'react-native';
-import Toolbar from '../components/Toolbar';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 
 import firestoreService from '../services/FirestoreService';
@@ -65,7 +64,9 @@ export default function OutgoingCallScreen({ route, navigation }) {
           setFailReason('Timeout waiting for peer connection (answer/ICE)');
           setPhase('failed');
           setLoading(false);
-          navigation.navigate('UserListScreen');
+          if (navigation.isFocused()) {
+            navigation.navigate('UserListScreen');
+          }
           manager.end?.();
         }, CALL_TIMEOUT_MS);
 
@@ -108,7 +109,9 @@ export default function OutgoingCallScreen({ route, navigation }) {
         if (!createdCallId) {
           if (timeoutId) clearTimeout(timeoutId);
           console.log('[OutgoingCallScreen] initCaller returned null callId (aborted)');
-          navigation.navigate('UserListScreen');
+          if (navigation.isFocused()) {
+            navigation.navigate('UserListScreen');
+          }
           return;
         }
         setCallId(createdCallId || manager.callId || null);
@@ -119,7 +122,9 @@ export default function OutgoingCallScreen({ route, navigation }) {
         setFailReason(e?.message || String(e));
         setPhase('failed');
         setLoading(false);
-        navigation.navigate('UserListScreen');
+        if (navigation.isFocused()) {
+          navigation.navigate('UserListScreen');
+        }
       }
     };
 
@@ -136,7 +141,9 @@ export default function OutgoingCallScreen({ route, navigation }) {
 
   const hangup = () => {
     manager.end?.();
-    navigation.navigate('UserListScreen');
+    if (navigation.isFocused()) {
+      navigation.navigate('UserListScreen');
+    }
   };
 
   const toggleMute = () => {
@@ -169,7 +176,6 @@ export default function OutgoingCallScreen({ route, navigation }) {
 
   return (
     <View style={styles.container}>
-      <Toolbar />
       <View style={styles.header}>
         {/* <Text style={styles.title}>Outgoing Call</Text> */}
         <Text style={styles.remoteName} numberOfLines={1}>

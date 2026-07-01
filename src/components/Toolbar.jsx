@@ -7,7 +7,7 @@ function SipBadge({ online, loggedIn }) {
   return null;
 }
 
-export default function Toolbar({ onSignOutPress }) {
+export default function Toolbar({ title, onSignOutPress }) {
   const [sipLoggedIn, setSipLoggedIn] = useState(true);
   const [online, setOnline] = useState(false);
 
@@ -27,7 +27,7 @@ export default function Toolbar({ onSignOutPress }) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>GooglePractical</Text>
+      <Text style={styles.title}>{title || 'GooglePractical'}</Text>
       <SipBadge online={online} loggedIn={sipLoggedIn} />
       {onSignOutPress ? (
         <TouchableOpacity

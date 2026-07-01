@@ -1,5 +1,35 @@
 import React, { useEffect, useRef } from 'react';
 import firestoreService from './src/services/FirestoreService';
+import { sharedWebRTCManager } from './src/webrtc/WebRTCManager';
+
+// Global Console Override to differentiate logs by current authenticated user
+const originalLog = console.log;
+const originalWarn = console.warn;
+const originalError = console.error;
+
+const getUserTag = () => {
+  try {
+    const user = firestoreService.getCurrentUser();
+    if (!user) return '[Anon]';
+    const email = user.email || '';
+    const name = email ? email.split('@')[0] : user.uid.substring(0, 6);
+    return `[User: ${name}]`;
+  } catch {
+    return '[Anon]';
+  }
+};
+
+console.log = (...args) => {
+  originalLog(getUserTag(), ...args);
+};
+
+console.warn = (...args) => {
+  originalWarn(getUserTag(), ...args);
+};
+
+console.error = (...args) => {
+  originalError(getUserTag(), ...args);
+};
 
 import {
   registerUserFCMToken,
@@ -16,6 +46,8 @@ import AppNavigator from './src/navigation/AppNavigator';
 import SplashScreen from 'react-native-splash-screen';
 import usePresence from './src/hooks/usePresence';
 
+let globalLastNavigatedCallId = null;
+
 const App = () => {
   const navigationRef = useRef(null);
   usePresence();
@@ -23,6 +55,7 @@ const App = () => {
   // Real-time Firestore call delivery listener
   useEffect(() => {
     let callUnsub = null;
+    const listenerMountedTime = Date.now();
 
     const authUnsub = firestoreService.onAuthStateChanged(user => {
       // Clean up previous call listener if any
@@ -39,7 +72,7 @@ const App = () => {
         callUnsub = firestoreService.listenIncomingCalls(user.uid, snap => {
           if (!snap) return;
 
-          // Filter on client-side: accept calls created within the last 2 minutes (immune to clock drift)
+          // Filter on client-side: accept calls created within the last 2 minutes and after app mount
           const activeCall = snap.docs.find(doc => {
             const data = doc.data();
             const createdAt = data.createdAt;
@@ -48,19 +81,38 @@ const App = () => {
               ? createdAt.toDate().getTime()
               : new Date(createdAt).getTime();
             const ageMs = Math.abs(Date.now() - createdTime);
-            return ageMs < 120000; // 2 minutes
+            
+            // Call must be less than 2 minutes old
+            if (ageMs > 120000) return false;
+
+            // Call must be created after our app listener became active (with a 5s buffer for startup)
+            const isRecent = createdTime > (listenerMountedTime - 5000);
+            return isRecent;
           });
 
           if (activeCall) {
+            const callId = activeCall.id;
+            if (globalLastNavigatedCallId === callId) {
+              return;
+            }
+
             const data = activeCall.data();
             console.log(
               '[App] Firestore incoming call detected:',
-              activeCall.id,
+              callId,
             );
             if (navigationRef.current) {
               const currentRoute = navigationRef.current.getCurrentRoute();
               const currentRouteName = currentRoute?.name;
               const currentCallId = currentRoute?.params?.callId;
+
+              if (sharedWebRTCManager.callId) {
+                console.log(
+                  '[App] Ignoring incoming call because user is already in a call session:',
+                  sharedWebRTCManager.callId,
+                );
+                return;
+              }
 
               if (currentRouteName === 'ActiveCallScreen' || currentRouteName === 'OutgoingCallScreen') {
                 console.log(
@@ -88,10 +140,22 @@ const App = () => {
                 }
               }
 
-              navigationRef.current.navigate('IncomingCallScreen', {
-                callId: activeCall.id,
-                remoteUserId: data.callerId,
-              });
+              globalLastNavigatedCallId = activeCall.id;
+              if (currentRouteName === 'SplashScreen' || currentRouteName === 'FirebaseAuth') {
+                console.log('[App] App is booting up. Resetting stack to UserListScreen + IncomingCallScreen');
+                navigationRef.current.reset({
+                  index: 1,
+                  routes: [
+                    { name: 'UserListScreen' },
+                    { name: 'IncomingCallScreen', params: { callId: activeCall.id, remoteUserId: data.callerId } }
+                  ],
+                });
+              } else {
+                navigationRef.current.navigate('IncomingCallScreen', {
+                  callId: activeCall.id,
+                  remoteUserId: data.callerId,
+                });
+              }
             }
           }
         });
@@ -164,9 +228,22 @@ const App = () => {
         // We rely on navigation being available once app is mounted.
         // If navigation isn't ready, just ignore; background handler stores globals.
         if (!navigationRef.current) return;
+
+        if (globalLastNavigatedCallId === callId) {
+          return;
+        }
+
         const currentRoute = navigationRef.current.getCurrentRoute();
         const currentRouteName = currentRoute?.name;
         const currentCallId = currentRoute?.params?.callId;
+
+        if (sharedWebRTCManager.callId) {
+          console.log(
+            '[App] Ignoring maybeNavigateToIncomingCall because user is already in a call session:',
+            sharedWebRTCManager.callId,
+          );
+          return;
+        }
 
         if (currentRouteName === 'ActiveCallScreen' || currentRouteName === 'OutgoingCallScreen') {
           console.log(
@@ -194,10 +271,22 @@ const App = () => {
           }
         }
 
-        navigationRef.current.navigate('IncomingCallScreen', {
-          callId,
-          remoteUserId,
-        });
+        globalLastNavigatedCallId = callId;
+        if (currentRouteName === 'SplashScreen' || currentRouteName === 'FirebaseAuth') {
+          console.log('[App] App is booting up (FCM). Resetting stack to UserListScreen + IncomingCallScreen');
+          navigationRef.current.reset({
+            index: 1,
+            routes: [
+              { name: 'UserListScreen' },
+              { name: 'IncomingCallScreen', params: { callId, remoteUserId } }
+            ],
+          });
+        } else {
+          navigationRef.current.navigate('IncomingCallScreen', {
+            callId,
+            remoteUserId,
+          });
+        }
       } catch {
         // ignore
       }

@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import Toolbar from '../components/Toolbar';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import InCallManager from 'react-native-incall-manager';
 import firestoreService from '../services/FirestoreService';
@@ -11,32 +10,51 @@ export default function ActiveCallScreen({ route, navigation }) {
   const manager = sharedWebRTCManager;
 
   const [isMuted, setIsMuted] = useState(false);
-  const [isSpeakerOn, setIsSpeakerOn] = useState(true);
+  const [isSpeakerOn, setIsSpeakerOn] = useState(false);
   const [remoteName, setRemoteName] = useState('Connected User');
 
   // Listen to call doc to auto-close if call is ended
   useEffect(() => {
     if (!callId) return;
 
+    let active = true;
     const unsub = firestoreService.listenCall(callId, snap => {
+      if (!active) return;
+
       if (!snap || !snap.exists) {
-        console.log('[ActiveCallScreen] Call document deleted/ended by remote peer');
-        navigation.navigate('UserListScreen');
+        console.log(
+          '[ActiveCallScreen] Call document deleted/ended by remote peer',
+        );
+        active = false;
+        unsub?.();
+        if (navigation.isFocused()) {
+          navigation.navigate('UserListScreen');
+        }
       } else {
         const data = snap.data();
         if (data && (data.status === 'ended' || data.status === 'rejected')) {
-          console.log('[ActiveCallScreen] Call status set to ended/rejected by remote peer');
-          navigation.navigate('UserListScreen');
+          console.log(
+            '[ActiveCallScreen] Call status set to ended/rejected by remote peer',
+          );
+          active = false;
+          unsub?.();
+          if (navigation.isFocused()) {
+            navigation.navigate('UserListScreen');
+          }
         }
       }
     });
 
-    return () => unsub?.();
+    return () => {
+      active = false;
+      unsub?.();
+    };
   }, [callId, navigation]);
 
   useEffect(() => {
     if (!remoteUserId) return;
-    firestoreService.getUser(remoteUserId)
+    firestoreService
+      .getUser(remoteUserId)
       .then(data => {
         if (data) {
           setRemoteName(data?.email || data?.displayName || remoteUserId);
@@ -59,8 +77,10 @@ export default function ActiveCallScreen({ route, navigation }) {
   }, []);
 
   // Format duration as MM:SS
-  const formatTime = (secs) => {
-    const m = Math.floor(secs / 60).toString().padStart(2, '0');
+  const formatTime = secs => {
+    const m = Math.floor(secs / 60)
+      .toString()
+      .padStart(2, '0');
     const s = (secs % 60).toString().padStart(2, '0');
     return `${m}:${s}`;
   };
@@ -69,7 +89,7 @@ export default function ActiveCallScreen({ route, navigation }) {
   useEffect(() => {
     try {
       InCallManager.start({ media: 'audio' });
-      InCallManager.setForceSpeakerphoneOn(true);
+      InCallManager.setForceSpeakerphoneOn(false);
     } catch (e) {
       console.log('[ActiveCallScreen] InCallManager start error', e);
     }
@@ -112,7 +132,9 @@ export default function ActiveCallScreen({ route, navigation }) {
     } catch (e) {
       console.log('[ActiveCallScreen] hangup error', e);
     }
-    navigation.navigate('UserListScreen');
+    if (navigation.isFocused()) {
+      navigation.navigate('UserListScreen');
+    }
   };
 
   // Monitor WebRTC PeerConnection connectionState to auto hangup if dropped/failed
@@ -121,7 +143,9 @@ export default function ActiveCallScreen({ route, navigation }) {
       const pc = manager.pc;
       if (!pc) {
         // If there is no peer connection, call has ended
-        navigation.navigate('UserListScreen');
+        if (navigation.isFocused()) {
+          navigation.navigate('UserListScreen');
+        }
         return;
       }
 
@@ -130,7 +154,10 @@ export default function ActiveCallScreen({ route, navigation }) {
         pc.connectionState === 'failed' ||
         pc.connectionState === 'disconnected'
       ) {
-        console.log('[ActiveCallScreen] auto hangup connectionState:', pc.connectionState);
+        console.log(
+          '[ActiveCallScreen] auto hangup connectionState:',
+          pc.connectionState,
+        );
         handleHangup();
       }
     }, 1500);
@@ -141,8 +168,6 @@ export default function ActiveCallScreen({ route, navigation }) {
 
   return (
     <View style={styles.container}>
-      <Toolbar />
-      
       <View style={styles.header}>
         <Text style={styles.title}>Active Call</Text>
         <Text style={styles.remoteName} numberOfLines={1}>
@@ -157,7 +182,7 @@ export default function ActiveCallScreen({ route, navigation }) {
             <Ionicons name="person" size={54} color="#e2e8f0" />
           </View>
         </View>
-        
+
         <Text style={styles.statusText}>Call Connected</Text>
         <Text style={styles.timerText}>{formatTime(duration)}</Text>
       </View>

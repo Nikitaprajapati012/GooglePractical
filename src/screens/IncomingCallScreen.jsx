@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
-import Toolbar from '../components/Toolbar';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import firestoreService from '../services/FirestoreService';
 import { sharedWebRTCManager } from '../webrtc/WebRTCManager';
@@ -20,6 +19,10 @@ export default function IncomingCallScreen({ route, navigation }) {
 
   const [status, setStatus] = useState('ringing'); // ringing | connecting
   const [callerName, setCallerName] = useState('Incoming Caller');
+
+  useEffect(() => {
+    console.log('[IncomingCallScreen] Mounted with callId:', callId, 'remoteUserId:', remoteUserId);
+  }, [callId, remoteUserId]);
 
   useEffect(() => {
     if (!remoteUserId) return;
@@ -40,22 +43,37 @@ export default function IncomingCallScreen({ route, navigation }) {
   useEffect(() => {
     if (!callId) return;
 
+    let active = true;
     const unsub = firestoreService.listenCall(callId, snap => {
+      if (!active) return;
+
       if (!snap || !snap.exists) {
         console.log('[IncomingCallScreen] Call document deleted by caller');
-        navigation.navigate('UserListScreen');
+        active = false;
+        unsub?.();
+        if (navigation.isFocused()) {
+          navigation.navigate('UserListScreen');
+        }
       } else {
         const data = snap.data();
         if (
           data &&
           (data.status === 'ended' || data.status === 'rejected')
         ) {
-          navigation.navigate('UserListScreen');
+          console.log('[IncomingCallScreen] Call status changed to:', data.status);
+          active = false;
+          unsub?.();
+          if (navigation.isFocused()) {
+            navigation.navigate('UserListScreen');
+          }
         }
       }
     });
 
-    return () => unsub?.();
+    return () => {
+      active = false;
+      unsub?.();
+    };
   }, [callId, navigation]);
 
   // Reset status and clean up if callId changes (parameter updates)
@@ -67,7 +85,9 @@ export default function IncomingCallScreen({ route, navigation }) {
 
   // Cleanup WebRTC connection on unmount if not connected/transitioned
   useEffect(() => {
+    console.log('[IncomingCallScreen] useEffect cleanup registered');
     return () => {
+      console.log('[IncomingCallScreen] Unmounting, shouldCleanup:', shouldCleanupOnUnmount.current);
       if (shouldCleanupOnUnmount.current) {
         manager.cleanup?.();
       }
@@ -75,6 +95,7 @@ export default function IncomingCallScreen({ route, navigation }) {
   }, [manager]);
 
   const handleAccept = async () => {
+    console.log('[IncomingCallScreen] handleAccept clicked/triggered');
     setStatus('connecting');
     try {
       if (!localUserId) throw new Error('Not authenticated');
@@ -92,28 +113,34 @@ export default function IncomingCallScreen({ route, navigation }) {
       });
       if (!res || !res.callId) {
         console.log('[IncomingCallScreen] initCallee returned null callId (aborted)');
-        navigation.navigate('UserListScreen');
+        if (navigation.isFocused()) {
+          navigation.navigate('UserListScreen');
+        }
         return;
       }
     } catch (e) {
       console.log('[IncomingCallScreen] initCallee error', e);
       setStatus('ringing');
-      navigation.navigate('UserListScreen');
+      if (navigation.isFocused()) {
+        navigation.navigate('UserListScreen');
+      }
     }
   };
 
   const handleDecline = async () => {
+    console.log('[IncomingCallScreen] handleDecline clicked/triggered');
     try {
       await manager.end?.();
     } catch (e) {
       console.log('[IncomingCallScreen] decline error', e);
     }
-    navigation.navigate('UserListScreen');
+    if (navigation.isFocused()) {
+      navigation.navigate('UserListScreen');
+    }
   };
 
   return (
     <View style={styles.container}>
-      <Toolbar />
 
       <View style={styles.content}>
         <View style={styles.avatarOutline}>

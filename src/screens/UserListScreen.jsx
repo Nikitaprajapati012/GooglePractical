@@ -8,6 +8,7 @@ import Toolbar from '../components/Toolbar';
 const UserListScreen = ({ navigation }) => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const isNavigating = React.useRef(false);
 
   const currentUserId = firestoreService.getCurrentUser()?.uid;
 
@@ -35,7 +36,7 @@ const UserListScreen = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
-      <Toolbar onSignOutPress={handleSignOut} />
+      <Toolbar title="User List" onSignOutPress={handleSignOut} />
       {loading ? (
         <ActivityIndicator style={{ marginTop: 24 }} />
       ) : (
@@ -50,9 +51,14 @@ const UserListScreen = ({ navigation }) => {
                 uid: item.uid,
               }}
               onPress={() => {
+                if (isNavigating.current) return;
+                isNavigating.current = true;
                 navigation.navigate('OutgoingCallScreen', {
                   remoteUserId: item.uid,
                 });
+                setTimeout(() => {
+                  isNavigating.current = false;
+                }, 1000);
               }}
             />
           )}
