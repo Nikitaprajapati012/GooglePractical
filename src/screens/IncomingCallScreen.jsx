@@ -73,7 +73,7 @@ export default function IncomingCallScreen({ route, navigation }) {
     try {
       if (!localUserId) throw new Error('Not authenticated');
 
-      await manager.initCallee({
+      const res = await manager.initCallee({
         localUserId,
         callId,
         onAnswered: () => {
@@ -84,6 +84,11 @@ export default function IncomingCallScreen({ route, navigation }) {
           });
         },
       });
+      if (!res || !res.callId) {
+        console.log('[IncomingCallScreen] initCallee returned null callId (aborted)');
+        navigation.navigate('UserListScreen');
+        return;
+      }
     } catch (e) {
       console.log('[IncomingCallScreen] initCallee error', e);
       Alert.alert('Call failed', e?.message || String(e));

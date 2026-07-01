@@ -100,14 +100,20 @@ export default function OutgoingCallScreen({ route, navigation }) {
             setPhase('connected');
             shouldCleanupOnUnmount.current = false;
             navigation.replace('ActiveCallScreen', {
-              callId: manager.callRef?.id,
+              callId: createdCallId || manager.callId,
               remoteUserId,
             });
           },
         });
 
         if (cancelled) return;
-        setCallId(createdCallId || manager.callRef?.id || null);
+        if (!createdCallId) {
+          if (timeoutId) clearTimeout(timeoutId);
+          console.log('[OutgoingCallScreen] initCaller returned null callId (aborted)');
+          navigation.navigate('UserListScreen');
+          return;
+        }
+        setCallId(createdCallId || manager.callId || null);
       } catch (e) {
         if (cancelled) return;
         if (timeoutId) clearTimeout(timeoutId);

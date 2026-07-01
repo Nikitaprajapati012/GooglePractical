@@ -147,6 +147,19 @@ const App = () => {
         // We rely on navigation being available once app is mounted.
         // If navigation isn't ready, just ignore; background handler stores globals.
         if (!navigationRef.current) return;
+        const currentRoute = navigationRef.current.getCurrentRoute()?.name;
+        if (
+          currentRoute === 'OutgoingCallScreen' ||
+          currentRoute === 'IncomingCallScreen' ||
+          currentRoute === 'ActiveCallScreen'
+        ) {
+          console.log(
+            '[App] Ignoring maybeNavigateToIncomingCall because user is already in a calling screen:',
+            currentRoute,
+          );
+          return;
+        }
+
         navigationRef.current.navigate('IncomingCallScreen', {
           callId,
           remoteUserId,
