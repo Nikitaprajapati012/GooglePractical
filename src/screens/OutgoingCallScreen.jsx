@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   ActivityIndicator,
-  Alert,
   TouchableOpacity,
 } from 'react-native';
 import Toolbar from '../components/Toolbar';
@@ -66,7 +65,6 @@ export default function OutgoingCallScreen({ route, navigation }) {
           setFailReason('Timeout waiting for peer connection (answer/ICE)');
           setPhase('failed');
           setLoading(false);
-          Alert.alert('Call failed', 'Timeout waiting for peer connection.');
           navigation.navigate('UserListScreen');
           manager.end?.();
         }, CALL_TIMEOUT_MS);
@@ -118,7 +116,6 @@ export default function OutgoingCallScreen({ route, navigation }) {
         if (cancelled) return;
         if (timeoutId) clearTimeout(timeoutId);
         console.log('[OutgoingCallScreen] initCaller error', e);
-        Alert.alert('Call failed', e?.message || String(e));
         setFailReason(e?.message || String(e));
         setPhase('failed');
         setLoading(false);

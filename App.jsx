@@ -58,17 +58,34 @@ const App = () => {
               activeCall.id,
             );
             if (navigationRef.current) {
-              const currentRoute = navigationRef.current.getCurrentRoute()?.name;
-              if (
-                currentRoute === 'OutgoingCallScreen' ||
-                currentRoute === 'IncomingCallScreen' ||
-                currentRoute === 'ActiveCallScreen'
-              ) {
+              const currentRoute = navigationRef.current.getCurrentRoute();
+              const currentRouteName = currentRoute?.name;
+              const currentCallId = currentRoute?.params?.callId;
+
+              if (currentRouteName === 'ActiveCallScreen' || currentRouteName === 'OutgoingCallScreen') {
                 console.log(
-                  '[App] Ignoring incoming call because user is already in a calling screen:',
-                  currentRoute,
+                  '[App] Ignoring incoming call because user is already active in a call:',
+                  currentRouteName,
                 );
                 return;
+              }
+
+              if (currentRouteName === 'IncomingCallScreen') {
+                if (currentCallId === activeCall.id) {
+                  console.log(
+                    '[App] Ignoring incoming call snapshot update for the same activeCallId:',
+                    activeCall.id,
+                  );
+                  return;
+                } else {
+                  console.log(
+                    '[App] Current IncomingCallScreen is for call:',
+                    currentCallId,
+                    'but new call is:',
+                    activeCall.id,
+                    '. Navigating to new call.',
+                  );
+                }
               }
 
               navigationRef.current.navigate('IncomingCallScreen', {
@@ -147,17 +164,34 @@ const App = () => {
         // We rely on navigation being available once app is mounted.
         // If navigation isn't ready, just ignore; background handler stores globals.
         if (!navigationRef.current) return;
-        const currentRoute = navigationRef.current.getCurrentRoute()?.name;
-        if (
-          currentRoute === 'OutgoingCallScreen' ||
-          currentRoute === 'IncomingCallScreen' ||
-          currentRoute === 'ActiveCallScreen'
-        ) {
+        const currentRoute = navigationRef.current.getCurrentRoute();
+        const currentRouteName = currentRoute?.name;
+        const currentCallId = currentRoute?.params?.callId;
+
+        if (currentRouteName === 'ActiveCallScreen' || currentRouteName === 'OutgoingCallScreen') {
           console.log(
-            '[App] Ignoring maybeNavigateToIncomingCall because user is already in a calling screen:',
-            currentRoute,
+            '[App] Ignoring maybeNavigateToIncomingCall because user is already active in a call:',
+            currentRouteName,
           );
           return;
+        }
+
+        if (currentRouteName === 'IncomingCallScreen') {
+          if (currentCallId === callId) {
+            console.log(
+              '[App] Ignoring maybeNavigateToIncomingCall snapshot update for the same activeCallId:',
+              callId,
+            );
+            return;
+          } else {
+            console.log(
+              '[App] Current IncomingCallScreen is for call:',
+              currentCallId,
+              'but new call is:',
+              callId,
+              '. Overwriting/navigating to new call.',
+            );
+          }
         }
 
         navigationRef.current.navigate('IncomingCallScreen', {

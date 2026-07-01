@@ -5,7 +5,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import Toolbar from '../components/Toolbar';
 import Ionicons from 'react-native-vector-icons/Ionicons';
@@ -59,6 +58,13 @@ export default function IncomingCallScreen({ route, navigation }) {
     return () => unsub?.();
   }, [callId, navigation]);
 
+  // Reset status and clean up if callId changes (parameter updates)
+  useEffect(() => {
+    setStatus('ringing');
+    shouldCleanupOnUnmount.current = true;
+    manager.cleanup?.();
+  }, [callId, manager]);
+
   // Cleanup WebRTC connection on unmount if not connected/transitioned
   useEffect(() => {
     return () => {
@@ -91,8 +97,8 @@ export default function IncomingCallScreen({ route, navigation }) {
       }
     } catch (e) {
       console.log('[IncomingCallScreen] initCallee error', e);
-      Alert.alert('Call failed', e?.message || String(e));
       setStatus('ringing');
+      navigation.navigate('UserListScreen');
     }
   };
 
